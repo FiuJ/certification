@@ -23,7 +23,7 @@ return new class extends Migration
             $table->decimal('battery_capacity', 10, 2)->nullable();
 
             $table->foreign('user_id')
-                ->references('id')
+                ->references('user_id')
                 ->on('users')
                 ->restrictOnDelete()
                 ->restrictOnUpdate();
