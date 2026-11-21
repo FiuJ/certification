@@ -15,11 +15,13 @@ return new class extends Migration
             $table->uuid('vehicle_id')->primary();
             $table->foreignUuid('user_id');
             $table->string('type', 20);
-            $table->string('license_plate', 20)->nullable();
+            $table->string('license_plate', 20)
+                ->nullable()
+                ->unique();
             $table->string('brand', 100);
             $table->string('model', 100);
             $table->decimal('battery_capacity', 10, 2)->nullable();
-            
+
             $table->foreign('user_id')
                 ->references('id')
                 ->on('users')
