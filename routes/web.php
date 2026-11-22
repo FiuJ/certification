@@ -12,7 +12,7 @@ use App\Http\Controllers\RenterDashboardController;
 use App\Http\Controllers\VehicleController;
 use Illuminate\Support\Facades\Route;
 
-Route::view('/', 'welcome');
+Route::redirect('/', '/login');
 
 /*
 |--------------------------------------------------------------------------
