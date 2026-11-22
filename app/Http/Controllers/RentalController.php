@@ -10,6 +10,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Http\JsonResponse;
 use Carbon\CarbonImmutable;
 use Illuminate\View\View;
 use Throwable;
@@ -247,6 +248,84 @@ class RentalController extends Controller
         return back()
             ->with('success', 'Rental extended successfully.');
     }
+
+
+    /**
+     * Return a price quote for a new rental.
+     */
+    public function quote(
+        Request $request,
+        RentalService $rentalService
+    ): JsonResponse {
+        $dateData = $request->validate([
+            'start_date' => [
+                'required',
+                'date_format:Y-m-d',
+                'after_or_equal:today',
+            ],
+        ]);
+
+        $startDate = CarbonImmutable::parse(
+            $dateData['start_date']
+        );
+
+        $validated = $request->validate([
+            'vehicle_id' => ['required', 'uuid'],
+            'garage_type' => [
+                'nullable',
+                Rule::in(['bicycle', 'car', 'electric_car']),
+            ],
+            'rental_type' => [
+                'required',
+                Rule::in(['daily', 'monthly']),
+            ],
+            'start_date' => [
+                'required',
+                'date_format:Y-m-d',
+                'after_or_equal:today',
+            ],
+            'duration' => [
+                'nullable',
+                'required_if:rental_type,daily',
+                'prohibited_if:rental_type,monthly',
+                'integer',
+                'min:1',
+                'max:'.($startDate->daysInMonth - 1),
+            ],
+        ]);
+
+        return response()->json(
+            $rentalService->quoteRental(
+                $request->user(),
+                $validated
+            )
+        );
+    }
+
+    /**
+     * Return an extension price quote for administrators.
+     */
+    public function quoteExtension(
+        Request $request,
+        RentalService $rentalService,
+        string $rental
+    ): JsonResponse {
+        $validated = $request->validate([
+            'end_date' => [
+                'required',
+                'date_format:Y-m-d',
+            ],
+        ]);
+
+        return response()->json(
+            $rentalService->quoteExtension(
+                $request->user(),
+                $rental,
+                $validated['end_date']
+            )
+        );
+    }
+
 
     /**
      * Store payment proof in private storage.

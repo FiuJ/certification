@@ -268,6 +268,125 @@ class RentalService
         }, 3);
     }
 
+
+    /**
+     * Preview a rental price without creating a rental.
+     */
+    public function quoteRental(User $user, array $data): array
+    {
+        if (
+            $user->role !== 'renter' ||
+            $user->registration_status !== 'Approve'
+        ) {
+            throw new AuthorizationException(
+                'Only approved renters can create rentals.'
+            );
+        }
+
+        $startDate = CarbonImmutable::parse($data['start_date']);
+
+        if ($startDate->lt(CarbonImmutable::today())) {
+            throw ValidationException::withMessages([
+                'start_date' => 'The start date cannot be in the past.',
+            ]);
+        }
+
+        $endDate = $this->calculateEndDate(
+            $startDate,
+            $data['rental_type'],
+            $data['duration'] ?? null
+        );
+
+        return DB::transaction(function () use (
+            $user, $data, $startDate, $endDate
+        ) {
+            $vehicle = $user->vehicles()
+                ->where('vehicle_id', $data['vehicle_id'])
+                ->firstOrFail();
+
+            $garageType = $this->getGarageType(
+                $vehicle,
+                $data['garage_type'] ?? null
+            );
+
+            $garage = $this->findAvailableGarage(
+                $garageType,
+                $startDate,
+                $endDate
+            );
+
+            return [
+                'garage_code' => $garage->garage_code,
+                'daily_rate' => (int) $garage->daily_rate,
+                'duration_days' => (int) $startDate->diffInDays($endDate),
+                'amount' => $this->calculateAmount(
+                    $garage,
+                    $data['rental_type'],
+                    $data['duration'] ?? null
+                ),
+            ];
+        });
+    }
+
+    /**
+     * Preview an extension price without saving an extension.
+     */
+    public function quoteExtension(
+        User $admin,
+        string $rentalId,
+        string $inclusiveEndDate
+    ): array {
+        if ($admin->role !== 'admin') {
+            throw new AuthorizationException(
+                'Only administrators can extend rentals.'
+            );
+        }
+
+        return DB::transaction(function () use (
+            $rentalId, $inclusiveEndDate
+        ) {
+            $original = $this->getAdminRental($rentalId);
+
+            $lastRental = collect([
+                $original,
+                ...$original->extensions,
+            ])
+                ->sortByDesc(
+                    fn (Rental $rental) =>
+                        $this->getEndDate($rental)->timestamp
+                )
+                ->first();
+
+            $startDate = $this->getEndDate($lastRental);
+
+            $duration = $this->calculateExtensionDuration(
+                $startDate,
+                $inclusiveEndDate
+            );
+
+            $endDate = $startDate->addDays($duration);
+
+            $garage = $this->findAvailableGarage(
+                $lastRental->garage->garage_type,
+                $startDate,
+                $endDate,
+                $lastRental->garage_id
+            );
+
+            return [
+                'garage_code' => $garage->garage_code,
+                'daily_rate' => (int) $garage->daily_rate,
+                'duration_days' => $duration,
+                'amount' => $this->calculateExtensionAmount(
+                    $garage,
+                    $startDate,
+                    $duration
+                ),
+            ];
+        });
+    }
+
+
     
     /**
      * Determine the compatible garage type for a vehicle.

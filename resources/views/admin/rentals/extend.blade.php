@@ -1,12 +1,13 @@
+
 @php
-    // The most recent record in the chain holds the current garage.
+    // The most recent record in the rental chain holds the current garage.
     $rentalChain = collect([$rental, ...$rental->extensions])->sortBy('start_date')->values();
     $currentRecord = $rentalChain->last();
 @endphp
 
 <x-app-layout>
     <x-slot name="header">
-        <x-page-heading title="Extend Rental" description="Choose the new last occupied day. Duration and price are calculated by the server.">
+        <x-page-heading title="Extend Rental" description="Choose the new last occupied day and review the extension amount before uploading payment proof.">
             <x-slot name="actions">
                 <x-link-button :href="route('admin.rentals.index')">Back to Rentals</x-link-button>
             </x-slot>
@@ -80,15 +81,70 @@
                   class="bg-white border border-neutral-200 rounded-md p-6 space-y-6"
                   x-data="{
                       startDate: @js($extensionStartDate->toDateString()),
+                      quoteUrl: @js(route('admin.rentals.quote', $rental->rental_id)),
                       endDate: @js(old('end_date', '')),
                       submitting: false,
+                      quote: null,
+                      quoteError: '',
+                      quoteLoading: false,
+                      quoteRequestId: 0,
+
                       get days() {
                           if (!this.endDate) return null;
-                          const toUtc = (value) => { const [y, m, d] = value.split('-').map(Number); return Date.UTC(y, m - 1, d); };
-                          const days = Math.round((toUtc(this.endDate) - toUtc(this.startDate)) / 86400000) + 1;
-                          return days >= 1 ? days : null;
+
+                          const toUtc = (value) => {
+                              const [y, m, d] = value.split('-').map(Number);
+                              return Date.UTC(y, m - 1, d);
+                          };
+
+                          const days = Math.round(
+                              (toUtc(this.endDate) - toUtc(this.startDate)) / 86400000
+                          ) + 1;
+
+                          return Number.isFinite(days) && days >= 1 ? days : null;
                       },
+                      formatRupiah(amount) {
+                          return 'Rp' + new Intl.NumberFormat('id-ID').format(amount);
+                      },
+                      async refreshQuote() {
+                          const requestId = ++this.quoteRequestId;
+                          this.quote = null;
+                          this.quoteError = '';
+                          this.quoteLoading = false;
+
+                          if (!this.days || this.days > 65535) return;
+
+                          this.quoteLoading = true;
+
+                          try {
+                              const params = new URLSearchParams({ end_date: this.endDate });
+                              const response = await fetch(this.quoteUrl + '?' + params.toString(), {
+                                  headers: { Accept: 'application/json' }
+                              });
+                              const result = await response.json();
+
+                              if (requestId !== this.quoteRequestId) return;
+
+                              if (!response.ok) {
+                                  this.quoteError = Object.values(result.errors ?? {}).flat()[0]
+                                      ?? result.message
+                                      ?? 'Unable to calculate the extension price.';
+                                  return;
+                              }
+
+                              this.quote = result;
+                          } catch (error) {
+                              if (requestId === this.quoteRequestId) {
+                                  this.quoteError = 'Unable to load the extension price. Please try again.';
+                              }
+                          } finally {
+                              if (requestId === this.quoteRequestId) {
+                                  this.quoteLoading = false;
+                              }
+                          }
+                      }
                   }"
+                  x-init="$watch('endDate', () => refreshQuote()); refreshQuote()"
                   @submit="submitting = true">
                 @csrf
 
@@ -108,14 +164,42 @@
                     Extension length: <span class="font-semibold text-black" x-text="days"></span> days.
                 </p>
 
-                <div class="rounded-md border border-dashed border-[#666666] px-4 py-3 text-sm text-[#333333]">
-                    <p class="font-semibold text-black">How the extension is priced</p>
-                    <p class="mt-1">
-                        The garage type stays <x-type-label kind="garage" :value="$currentRecord->garage->garage_type" />.
-                        The current garage is kept when available; otherwise another available garage of the same type is assigned.
-                        Starting from the extension start date, each full period as long as its starting month is charged at 25 × the daily rate,
-                        and any remaining days at the daily rate.
-                        The final amount is calculated by the server and appears on the extension record.
+                <!-- Price preview, calculated by RentalService on the server -->
+                <div class="rounded-md border border-neutral-200 bg-neutral-50 px-4 py-4 text-sm" aria-live="polite">
+                    <p class="font-semibold text-black">Extension Price Preview</p>
+
+                    <p class="mt-2 text-[#666666]" x-show="!quote && !quoteLoading && !quoteError">
+                        Choose a valid new last occupied day to see the price.
+                    </p>
+
+                    <p class="mt-2 text-[#666666]" x-show="quoteLoading" x-cloak>
+                        Calculating extension price...
+                    </p>
+
+                    <p class="mt-2 text-[#666666]" x-show="quoteError" x-text="quoteError" x-cloak></p>
+
+                    <div class="mt-3 space-y-2" x-show="quote" x-cloak>
+                        <div class="flex justify-between gap-4">
+                            <span class="text-[#666666]">Estimated garage</span>
+                            <span class="font-medium text-black" x-text="quote?.garage_code"></span>
+                        </div>
+                        <div class="flex justify-between gap-4">
+                            <span class="text-[#666666]">Daily rate</span>
+                            <span class="text-black" x-text="formatRupiah(quote?.daily_rate ?? 0)"></span>
+                        </div>
+                        <div class="flex justify-between gap-4">
+                            <span class="text-[#666666]">Extension duration</span>
+                            <span class="text-black" x-text="(quote?.duration_days ?? 0) + ' days'"></span>
+                        </div>
+                        <div class="flex justify-between gap-4 border-t border-neutral-200 pt-3">
+                            <span class="font-semibold text-black">Total Extension Amount</span>
+                            <span class="text-xl font-bold text-black" x-text="formatRupiah(quote?.amount ?? 0)"></span>
+                        </div>
+                    </div>
+
+                    <p class="mt-3 text-xs text-[#666666]">
+                        Each full month-length period is charged at 25 × the daily rate. Remaining days use the daily rate.
+                        The server rechecks availability and recalculates the final amount on submission.
                     </p>
                 </div>
 
@@ -129,7 +213,7 @@
 
                 <div class="flex flex-wrap items-center justify-end gap-3 border-t border-neutral-200 pt-6">
                     <x-link-button :href="route('admin.rentals.index')">Cancel</x-link-button>
-                    <x-primary-button x-bind:disabled="submitting">Extend Rental</x-primary-button>
+                    <x-primary-button x-bind:disabled="submitting || quoteLoading || !quote">Extend Rental</x-primary-button>
                 </div>
             </form>
         </div>

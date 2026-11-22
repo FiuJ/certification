@@ -107,6 +107,14 @@ Route::middleware(['auth', 'admin'])->group(function () {
         ->whereUuid('rental')
         ->name('admin.rentals.extension');
 
+
+    Route::get('/admin/rentals/{rental}/quote', [
+        RentalController::class,
+        'quoteExtension',
+    ])
+        ->whereUuid('rental')
+        ->name('admin.rentals.quote');
+        
     // Only admins may extend a rental; renters request it offline.
     Route::post('/admin/rentals/{rental}/extend', [
         RentalController::class,
@@ -227,6 +235,11 @@ Route::middleware(['auth', 'approved.renter'])->group(function () {
     ])
         ->whereUuid('rental')
         ->name('charging.store');
+
+    Route::get('/rentals/quote', [
+        RentalController::class,
+        'quote',
+    ])->name('rentals.quote');
 
     // Declared after '/rentals/create' so "create" is never
     // treated as a rental ID.
