@@ -1,4 +1,3 @@
-
 <?php
 
 use App\Http\Controllers\ChargingController;
@@ -82,6 +81,14 @@ Route::middleware(['auth', 'admin'])->group(function () {
         GarageController::class,
         'store',
     ])->name('garages.store');
+
+    // Currently Rented Garages
+
+    // Display garage rentals that are active today.
+    Route::get('/admin/garages/currently-rented', [
+        GarageController::class,
+        'currentlyRented',
+    ])->name('admin.garages.currently-rented');
 
     // Rental Extension
 

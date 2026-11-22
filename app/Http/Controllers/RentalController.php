@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\GarageService;
 use App\Services\RentalService;
 use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
@@ -18,8 +19,12 @@ class RentalController extends Controller
      */
     public function index(
         Request $request,
-        RentalService $rentalService
+        RentalService $rentalService,
+        GarageService $garageService
     ): View {
+        // Refresh garage statuses when the rental page is opened.
+        $garageService->syncGarageStatuses();
+
         $rentals = $rentalService->getRentals(
             $request->user()
         );
@@ -30,8 +35,12 @@ class RentalController extends Controller
     /**
      * Display the rental creation form.
      */
-    public function create(): View
-    {
+    public function create(
+        GarageService $garageService
+    ): View {
+        // Refresh garage statuses before creating a rental.
+        $garageService->syncGarageStatuses();
+
         return view('rentals.create');
     }
 
