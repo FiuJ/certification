@@ -1,8 +1,13 @@
 <x-guest-layout>
+    <div class="mb-6">
+        <h1 class="text-lg font-semibold text-black">Log in</h1>
+        <p class="mt-1 text-sm text-[#666666]">Access your garage rental account.</p>
+    </div>
+
     <!-- Session Status -->
     <x-auth-session-status class="mb-4" :status="session('status')" />
 
-    <form method="POST" action="{{ route('login') }}">
+    <form method="POST" action="{{ route('login') }}" x-data="{ submitting: false }" @submit="submitting = true">
         @csrf
 
         <!-- Email Address -->
@@ -25,23 +30,30 @@
         </div>
 
         <!-- Remember Me -->
-        <div class="block mt-4">
+        <div class="flex items-center justify-between mt-4">
             <label for="remember_me" class="inline-flex items-center">
-                <input id="remember_me" type="checkbox" class="rounded dark:bg-gray-900 border-gray-300 dark:border-gray-700 text-indigo-600 shadow-sm focus:ring-indigo-500 dark:focus:ring-indigo-600 dark:focus:ring-offset-gray-800" name="remember">
-                <span class="ms-2 text-sm text-gray-600 dark:text-gray-400">{{ __('Remember me') }}</span>
+                <input id="remember_me" type="checkbox" class="rounded border-[#666666] text-black focus:ring-black" name="remember">
+                <span class="ms-2 text-sm text-[#333333]">{{ __('Remember me') }}</span>
             </label>
-        </div>
 
-        <div class="flex items-center justify-end mt-4">
             @if (Route::has('password.request'))
-                <a class="underline text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:focus:ring-offset-gray-800" href="{{ route('password.request') }}">
+                <a class="underline text-sm text-[#666666] hover:text-black rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black" href="{{ route('password.request') }}">
                     {{ __('Forgot your password?') }}
                 </a>
             @endif
-
-            <x-primary-button class="ms-3">
-                {{ __('Log in') }}
-            </x-primary-button>
         </div>
+
+        <x-primary-button class="mt-6 w-full" x-bind:disabled="submitting">
+            {{ __('Log in') }}
+        </x-primary-button>
+
+        @if (Route::has('register'))
+            <p class="mt-6 text-center text-sm text-[#666666]">
+                No account yet?
+                <a href="{{ route('register') }}" class="font-semibold text-black underline hover:text-[#333333] focus:outline-none focus:ring-2 focus:ring-black rounded">
+                    Register as a renter
+                </a>
+            </p>
+        @endif
     </form>
 </x-guest-layout>

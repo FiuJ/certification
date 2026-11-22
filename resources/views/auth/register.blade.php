@@ -1,52 +1,55 @@
 <x-guest-layout>
-    <form method="POST" action="{{ route('register') }}">
+    <div class="mb-6">
+        <h1 class="text-lg font-semibold text-black">Renter registration</h1>
+        <p class="mt-1 text-sm text-[#666666]">
+            New accounts are reviewed by an administrator before renter features become available.
+        </p>
+    </div>
+
+    <form method="POST" action="{{ route('register') }}" class="space-y-4" x-data="{ submitting: false }" @submit="submitting = true">
         @csrf
 
+        <!-- NIK -->
+        <x-form-field name="nik" label="NIK" hint="16-digit national identity number." required>
+            <x-text-input id="nik" class="block w-full" type="text" name="nik" :value="old('nik')"
+                          required autofocus inputmode="numeric" pattern="[0-9]{16}" maxlength="16"
+                          title="NIK must contain exactly 16 digits." />
+        </x-form-field>
+
         <!-- Name -->
-        <div>
-            <x-input-label for="name" :value="__('Name')" />
-            <x-text-input id="name" class="block mt-1 w-full" type="text" name="name" :value="old('name')" required autofocus autocomplete="name" />
-            <x-input-error :messages="$errors->get('name')" class="mt-2" />
-        </div>
+        <x-form-field name="name" label="Full name" required>
+            <x-text-input id="name" class="block w-full" type="text" name="name" :value="old('name')" required maxlength="255" autocomplete="name" />
+        </x-form-field>
+
+        <!-- Phone -->
+        <x-form-field name="phone" label="Phone number" required>
+            <x-text-input id="phone" class="block w-full" type="tel" name="phone" :value="old('phone')" required maxlength="20" autocomplete="tel" />
+        </x-form-field>
 
         <!-- Email Address -->
-        <div class="mt-4">
-            <x-input-label for="email" :value="__('Email')" />
-            <x-text-input id="email" class="block mt-1 w-full" type="email" name="email" :value="old('email')" required autocomplete="username" />
-            <x-input-error :messages="$errors->get('email')" class="mt-2" />
-        </div>
+        <x-form-field name="email" label="Email" required>
+            <x-text-input id="email" class="block w-full" type="email" name="email" :value="old('email')" required maxlength="255" autocomplete="username" />
+        </x-form-field>
 
         <!-- Password -->
-        <div class="mt-4">
-            <x-input-label for="password" :value="__('Password')" />
-
-            <x-text-input id="password" class="block mt-1 w-full"
-                            type="password"
-                            name="password"
-                            required autocomplete="new-password" />
-
-            <x-input-error :messages="$errors->get('password')" class="mt-2" />
-        </div>
+        <x-form-field name="password" label="Password" required>
+            <x-text-input id="password" class="block w-full" type="password" name="password" required autocomplete="new-password" />
+        </x-form-field>
 
         <!-- Confirm Password -->
-        <div class="mt-4">
-            <x-input-label for="password_confirmation" :value="__('Confirm Password')" />
+        <x-form-field name="password_confirmation" label="Confirm password" required>
+            <x-text-input id="password_confirmation" class="block w-full" type="password" name="password_confirmation" required autocomplete="new-password" />
+        </x-form-field>
 
-            <x-text-input id="password_confirmation" class="block mt-1 w-full"
-                            type="password"
-                            name="password_confirmation" required autocomplete="new-password" />
+        <x-primary-button class="w-full" x-bind:disabled="submitting">
+            {{ __('Register') }}
+        </x-primary-button>
 
-            <x-input-error :messages="$errors->get('password_confirmation')" class="mt-2" />
-        </div>
-
-        <div class="flex items-center justify-end mt-4">
-            <a class="underline text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:focus:ring-offset-gray-800" href="{{ route('login') }}">
-                {{ __('Already registered?') }}
+        <p class="text-center text-sm text-[#666666]">
+            Already registered?
+            <a class="font-semibold text-black underline hover:text-[#333333] rounded focus:outline-none focus:ring-2 focus:ring-black" href="{{ route('login') }}">
+                Log in
             </a>
-
-            <x-primary-button class="ms-4">
-                {{ __('Register') }}
-            </x-primary-button>
-        </div>
+        </p>
     </form>
 </x-guest-layout>

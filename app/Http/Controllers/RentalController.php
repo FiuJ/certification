@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Services\GarageService;
 use App\Services\RentalService;
+use App\Services\VehicleService;
 use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Storage;
@@ -37,12 +38,19 @@ class RentalController extends Controller
      * Display the rental creation form.
      */
     public function create(
-        GarageService $garageService
+        Request $request,
+        GarageService $garageService,
+        VehicleService $vehicleService
     ): View {
         // Refresh garage statuses before creating a rental.
         $garageService->syncGarageStatuses();
 
-        return view('rentals.create');
+        // Only the renter's own vehicles can be rented for.
+        $vehicles = $vehicleService->getVehicles(
+            $request->user()
+        );
+
+        return view('rentals.create', compact('vehicles'));
     }
 
     /**
@@ -152,6 +160,47 @@ class RentalController extends Controller
         );
 
         return view('rentals.show', compact('rental'));
+    }
+
+    /**
+     * Display all original rentals for administrators.
+     */
+    public function adminIndex(
+        RentalService $rentalService
+    ): View {
+        $rentals = $rentalService->getAdminRentals();
+
+        // Last occupied date of each rental, including extensions.
+        $lastOccupiedDates = $rentals->mapWithKeys(
+            fn ($rental) => [
+                $rental->rental_id =>
+                    $rentalService->getLatestEndDate($rental)->subDay(),
+            ]
+        );
+
+        return view('admin.rentals.index', compact(
+            'rentals',
+            'lastOccupiedDates'
+        ));
+    }
+
+    /**
+     * Display the rental extension form for administrators.
+     */
+    public function extension(
+        RentalService $rentalService,
+        string $rental
+    ): View {
+        $rental = $rentalService->getAdminRental($rental);
+
+        $latestEndDate = $rentalService->getLatestEndDate($rental);
+
+        return view('admin.rentals.extend', [
+            'rental' => $rental,
+            // The next extension starts on the exclusive end date.
+            'extensionStartDate' => $latestEndDate,
+            'lastOccupiedDate' => $latestEndDate->subDay(),
+        ]);
     }
 
     /**

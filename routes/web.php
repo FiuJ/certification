@@ -8,6 +8,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RegistrationStatusController;
 use App\Http\Controllers\RenterApprovalController;
 use App\Http\Controllers\RentalController;
+use App\Http\Controllers\RenterDashboardController;
 use App\Http\Controllers\VehicleController;
 use Illuminate\Support\Facades\Route;
 
@@ -92,6 +93,20 @@ Route::middleware(['auth', 'admin'])->group(function () {
 
     // Rental Extension
 
+    // Original rentals that an admin may extend.
+    Route::get('/admin/rentals', [
+        RentalController::class,
+        'adminIndex',
+    ])->name('admin.rentals.index');
+
+    // Extension form; submits to the POST route below.
+    Route::get('/admin/rentals/{rental}/extend', [
+        RentalController::class,
+        'extension',
+    ])
+        ->whereUuid('rental')
+        ->name('admin.rentals.extension');
+
     // Only admins may extend a rental; renters request it offline.
     Route::post('/admin/rentals/{rental}/extend', [
         RentalController::class,
@@ -135,8 +150,10 @@ Route::middleware(['auth', 'admin'])->group(function () {
 
 Route::middleware(['auth', 'approved.renter'])->group(function () {
 
-    Route::view('/renter/dashboard', 'dashboard')
-        ->name('renter.dashboard');
+    Route::get('/renter/dashboard', [
+        RenterDashboardController::class,
+        'index',
+    ])->name('renter.dashboard');
 
     // Vehicles
 

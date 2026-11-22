@@ -1,32 +1,61 @@
-<nav x-data="{ open: false }" class="bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700">
+@php
+    $user = Auth::user();
+
+    // Links shown per role; the server still enforces access on every route.
+    $navigationLinks = match (true) {
+        $user->role === 'admin' => [
+            ['label' => 'Dashboard', 'href' => route('admin.dashboard'), 'active' => request()->routeIs('admin.dashboard')],
+            ['label' => 'Garages', 'href' => route('garages.index'), 'active' => request()->routeIs('garages.*')],
+            ['label' => 'Currently Rented', 'href' => route('admin.garages.currently-rented'), 'active' => request()->routeIs('admin.garages.currently-rented')],
+            ['label' => 'Rentals & Extensions', 'href' => route('admin.rentals.index'), 'active' => request()->routeIs('admin.rentals.*')],
+            ['label' => 'Renter Approvals', 'href' => route('admin.renters.pending'), 'active' => request()->routeIs('admin.renters.*')],
+            ['label' => 'Reports', 'href' => route('admin.dashboard').'#reports', 'active' => false],
+        ],
+        $user->role === 'renter' && $user->registration_status === 'Approve' => [
+            ['label' => 'Dashboard', 'href' => route('renter.dashboard'), 'active' => request()->routeIs('renter.dashboard')],
+            ['label' => 'My Vehicles', 'href' => route('vehicles.index'), 'active' => request()->routeIs('vehicles.*')],
+            ['label' => 'My Rentals', 'href' => route('rentals.index'), 'active' => request()->routeIs('rentals.index', 'rentals.show', 'charging.*')],
+            ['label' => 'Create Rental', 'href' => route('rentals.create'), 'active' => request()->routeIs('rentals.create')],
+        ],
+        $user->role === 'renter' => [
+            ['label' => 'Registration Status', 'href' => route('registration.status'), 'active' => request()->routeIs('registration.status')],
+        ],
+        default => [],
+    };
+@endphp
+
+<nav x-data="{ open: false }" class="bg-white border-b border-neutral-200">
     <!-- Primary Navigation Menu -->
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="flex justify-between h-16">
             <div class="flex">
                 <!-- Logo -->
                 <div class="shrink-0 flex items-center">
-                    <a href="{{ route('dashboard') }}">
-                        <x-application-logo class="block h-9 w-auto fill-current text-gray-800 dark:text-gray-200" />
+                    <a href="{{ route('dashboard') }}" class="flex items-center gap-2">
+                        <x-application-logo class="block h-8 w-auto fill-current text-black" />
+                        <span class="hidden xl:inline text-sm font-semibold uppercase tracking-widest text-black">Garage Rental</span>
                     </a>
                 </div>
 
                 <!-- Navigation Links -->
-                <div class="hidden space-x-8 sm:-my-px sm:ms-10 sm:flex">
-                    <x-nav-link :href="route('dashboard')" :active="request()->routeIs('dashboard')">
-                        {{ __('Dashboard') }}
-                    </x-nav-link>
+                <div class="hidden space-x-6 lg:-my-px lg:ms-8 lg:flex">
+                    @foreach ($navigationLinks as $link)
+                        <x-nav-link :href="$link['href']" :active="$link['active']">
+                            {{ $link['label'] }}
+                        </x-nav-link>
+                    @endforeach
                 </div>
             </div>
 
             <!-- Settings Dropdown -->
-            <div class="hidden sm:flex sm:items-center sm:ms-6">
+            <div class="hidden lg:flex lg:items-center lg:ms-6">
                 <x-dropdown align="right" width="48">
                     <x-slot name="trigger">
-                        <button class="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-300 focus:outline-none transition ease-in-out duration-150">
-                            <div>{{ Auth::user()->name }}</div>
+                        <button class="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-[#333333] bg-white hover:text-black focus:outline-none focus:ring-2 focus:ring-black transition ease-in-out duration-150">
+                            <div>{{ $user->name }}</div>
 
                             <div class="ms-1">
-                                <svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+                                <svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" aria-hidden="true">
                                     <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
                                 </svg>
                             </div>
@@ -34,6 +63,13 @@
                     </x-slot>
 
                     <x-slot name="content">
+                        <div class="px-4 py-2 border-b border-neutral-200">
+                            <div class="text-xs uppercase tracking-wide text-[#666666]">
+                                {{ $user->role === 'admin' ? 'Administrator' : 'Renter' }}
+                            </div>
+                            <div class="text-sm text-black truncate">{{ $user->email }}</div>
+                        </div>
+
                         <x-dropdown-link :href="route('profile.edit')">
                             {{ __('Profile') }}
                         </x-dropdown-link>
@@ -53,9 +89,9 @@
             </div>
 
             <!-- Hamburger -->
-            <div class="-me-2 flex items-center sm:hidden">
-                <button @click="open = ! open" class="inline-flex items-center justify-center p-2 rounded-md text-gray-400 dark:text-gray-500 hover:text-gray-500 dark:hover:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-900 focus:outline-none focus:bg-gray-100 dark:focus:bg-gray-900 focus:text-gray-500 dark:focus:text-gray-400 transition duration-150 ease-in-out">
-                    <svg class="h-6 w-6" stroke="currentColor" fill="none" viewBox="0 0 24 24">
+            <div class="-me-2 flex items-center lg:hidden">
+                <button @click="open = ! open" :aria-expanded="open.toString()" aria-label="Toggle navigation" class="inline-flex items-center justify-center p-2 rounded-md text-black hover:bg-neutral-100 focus:outline-none focus:ring-2 focus:ring-black transition duration-150 ease-in-out">
+                    <svg class="h-6 w-6" stroke="currentColor" fill="none" viewBox="0 0 24 24" aria-hidden="true">
                         <path :class="{'hidden': open, 'inline-flex': ! open }" class="inline-flex" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
                         <path :class="{'hidden': ! open, 'inline-flex': open }" class="hidden" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                     </svg>
@@ -65,22 +101,24 @@
     </div>
 
     <!-- Responsive Navigation Menu -->
-    <div :class="{'block': open, 'hidden': ! open}" class="hidden sm:hidden">
+    <div :class="{'block': open, 'hidden': ! open}" class="hidden lg:hidden">
         <div class="pt-2 pb-3 space-y-1">
-            <x-responsive-nav-link :href="route('dashboard')" :active="request()->routeIs('dashboard')">
-                {{ __('Dashboard') }}
-            </x-responsive-nav-link>
+            @foreach ($navigationLinks as $link)
+                <x-responsive-nav-link :href="$link['href']" :active="$link['active']">
+                    {{ $link['label'] }}
+                </x-responsive-nav-link>
+            @endforeach
         </div>
 
         <!-- Responsive Settings Options -->
-        <div class="pt-4 pb-1 border-t border-gray-200 dark:border-gray-600">
+        <div class="pt-4 pb-1 border-t border-neutral-200">
             <div class="px-4">
-                <div class="font-medium text-base text-gray-800 dark:text-gray-200">{{ Auth::user()->name }}</div>
-                <div class="font-medium text-sm text-gray-500">{{ Auth::user()->email }}</div>
+                <div class="font-medium text-base text-black">{{ $user->name }}</div>
+                <div class="font-medium text-sm text-[#666666]">{{ $user->email }}</div>
             </div>
 
             <div class="mt-3 space-y-1">
-                <x-responsive-nav-link :href="route('profile.edit')">
+                <x-responsive-nav-link :href="route('profile.edit')" :active="request()->routeIs('profile.edit')">
                     {{ __('Profile') }}
                 </x-responsive-nav-link>
 

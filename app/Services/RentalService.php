@@ -39,6 +39,56 @@ class RentalService
     }
 
     /**
+     * Get all original rentals with their extensions for administrators.
+     */
+    public function getAdminRentals(): Collection
+    {
+        return Rental::with([
+            'vehicle.user',
+            'garage',
+            'extensions',
+        ])
+            ->whereNull('original_rental_id')
+            ->orderByDesc('start_date')
+            ->get();
+    }
+
+    /**
+     * Get an original rental with its extensions for administrators.
+     * An extension ID resolves to its original rental.
+     */
+    public function getAdminRental(string $rentalId): Rental
+    {
+        $selectedRental = Rental::findOrFail($rentalId);
+
+        $originalId = $selectedRental->original_rental_id
+            ?? $selectedRental->rental_id;
+
+        return Rental::with([
+            'vehicle.user',
+            'garage',
+            'extensions.garage',
+        ])
+            ->where('rental_id', $originalId)
+            ->firstOrFail();
+    }
+
+    /**
+     * Get the latest exclusive end date of an original rental,
+     * including all of its extensions.
+     */
+    public function getLatestEndDate(Rental $originalRental): CarbonImmutable
+    {
+        return collect([
+            $originalRental,
+            ...$originalRental->extensions,
+        ])
+            ->map(fn (Rental $rental) => $this->getEndDate($rental))
+            ->sortByDesc(fn (CarbonImmutable $date) => $date->timestamp)
+            ->first();
+    }
+
+    /**
      * Create a new rental or Buy More transaction.
      */
     public function createRental(
