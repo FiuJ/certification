@@ -1,3 +1,4 @@
+
 <?php
 
 use App\Http\Controllers\ChargingController;
@@ -6,6 +7,7 @@ use App\Http\Controllers\DashboardEntryController;
 use App\Http\Controllers\GarageController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RegistrationStatusController;
+use App\Http\Controllers\RenterApprovalController;
 use App\Http\Controllers\RentalController;
 use App\Http\Controllers\VehicleController;
 use Illuminate\Support\Facades\Route;
@@ -64,6 +66,8 @@ Route::middleware(['auth', 'admin'])->group(function () {
         'index',
     ])->name('admin.dashboard');
 
+    // Garage Management
+
     Route::get('/garages', [
         GarageController::class,
         'index',
@@ -79,6 +83,8 @@ Route::middleware(['auth', 'admin'])->group(function () {
         'store',
     ])->name('garages.store');
 
+    // Rental Extension
+
     // Only admins may extend a rental; renters request it offline.
     Route::post('/admin/rentals/{rental}/extend', [
         RentalController::class,
@@ -86,6 +92,30 @@ Route::middleware(['auth', 'admin'])->group(function () {
     ])
         ->whereUuid('rental')
         ->name('admin.rentals.extend');
+
+    // Renter Registration Approval
+
+    // Display all pending renter registrations.
+    Route::get('/admin/renters/pending', [
+        RenterApprovalController::class,
+        'index',
+    ])->name('admin.renters.pending');
+
+    // Approve a pending renter registration.
+    Route::patch('/admin/renters/{user}/approve', [
+        RenterApprovalController::class,
+        'approve',
+    ])
+        ->whereUuid('user')
+        ->name('admin.renters.approve');
+
+    // Reject a pending renter registration.
+    Route::patch('/admin/renters/{user}/reject', [
+        RenterApprovalController::class,
+        'reject',
+    ])
+        ->whereUuid('user')
+        ->name('admin.renters.reject');
 });
 
 /*
@@ -97,7 +127,7 @@ Route::middleware(['auth', 'admin'])->group(function () {
 */
 
 Route::middleware(['auth', 'approved.renter'])->group(function () {
-    
+
     Route::view('/renter/dashboard', 'dashboard')
         ->name('renter.dashboard');
 
