@@ -9,6 +9,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use Carbon\CarbonImmutable;
 use Illuminate\View\View;
 use Throwable;
 
@@ -51,6 +52,25 @@ class RentalController extends Controller
         Request $request,
         RentalService $rentalService
     ): RedirectResponse {
+
+        // Validate the start date before calculating the duration limit.
+        $dateData = $request->validate([
+            'start_date' => [
+                'nullable',
+                'date_format:Y-m-d',
+                'after_or_equal:today',
+            ],
+        ]);
+
+        // Use the selected start date, or today if not provided.
+        $startDate = CarbonImmutable::parse(
+            $dateData['start_date'] ?? now()->toDateString()
+        );
+
+        // Maximum daily duration = days in starting month - 1.
+        $maxDailyDuration = $startDate->daysInMonth - 1;
+
+
         $validated = $request->validate([
             'vehicle_id' => [
                 'required',
@@ -83,7 +103,7 @@ class RentalController extends Controller
                 'prohibited_if:rental_type,monthly',
                 'integer',
                 'min:1',
-                'max:30',
+                'max:'. $maxDailyDuration,
             ],
             'payment_proof' => [
                 'required',
