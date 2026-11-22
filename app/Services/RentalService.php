@@ -81,7 +81,10 @@ class RentalService
                 ->where('vehicle_id', $data['vehicle_id'])
                 ->firstOrFail();
 
-            $garageType = $this->getGarageType($vehicle);
+            $garageType = $this->getGarageType(
+                $vehicle,
+                $data['garage_type'] ?? null
+            );
 
             $garage = $this->findAvailableGarage(
                 $garageType,
@@ -118,8 +121,8 @@ class RentalService
     }
 
     /**
-     * Extend an existing rental.
-     * Only administrators may perform extensions.
+     * Extend an existing rental using the admin's inclusive end date.
+     * The garage type must remain unchanged.
      */
     public function extendRental(
         User $admin,
@@ -140,7 +143,6 @@ class RentalService
         ) {
             $selectedRental = Rental::findOrFail($rentalId);
 
-            // Every extension refers to the original rental.
             $originalId = $selectedRental->original_rental_id
                 ?? $selectedRental->rental_id;
 
@@ -151,7 +153,6 @@ class RentalService
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            // Get the original rental and all its extensions.
             $rentalHistory = Rental::where(function ($query) use (
                 $originalId
             ) {
@@ -161,7 +162,6 @@ class RentalService
                 ->lockForUpdate()
                 ->get();
 
-            // Find the period that ends last.
             $lastRental = $rentalHistory
                 ->sortByDesc(
                     fn (Rental $rental) =>
@@ -169,42 +169,43 @@ class RentalService
                 )
                 ->first();
 
-            // Extension begins when the previous period ends.
+            // A new extension starts at the previous exclusive end.
             $startDate = $this->getEndDate($lastRental);
 
-            $endDate = $this->calculateEndDate(
+            // The admin selects the last occupied day.
+            $duration = $this->calculateExtensionDuration(
                 $startDate,
-                $data['rental_type'],
-                $data['duration'] ?? null
+                $data['end_date']
             );
 
-            $vehicle = $originalRental->vehicle;
+            $endDateExclusive = $startDate->addDays(
+                $duration
+            );
 
-            $garageType = $this->getGarageType($vehicle);
+            // Preserve the garage type of the last rental.
+            $garageType = $lastRental->garage->garage_type;
 
-            // Prefer the previous garage if it is available.
+            // Prefer the same garage, then another of the same type.
             $garage = $this->findAvailableGarage(
                 $garageType,
                 $startDate,
-                $endDate,
+                $endDateExclusive,
                 $lastRental->garage_id
             );
 
-            $amount = $this->calculateAmount(
+            $amount = $this->calculateExtensionAmount(
                 $garage,
-                $data['rental_type'],
-                $data['duration'] ?? null
+                $startDate,
+                $duration
             );
 
             $extension = Rental::create([
                 'vehicle_id' => $originalRental->vehicle_id,
                 'garage_id' => $garage->garage_id,
                 'original_rental_id' => $originalId,
-                'rental_type' => $data['rental_type'],
+                'rental_type' => 'extension',
                 'start_date' => $startDate->toDateString(),
-                'duration' => $data['rental_type'] === 'daily'
-                    ? $data['duration']
-                    : null,
+                'duration' => $duration,
                 'rental_amount' => $amount,
                 'payment_path' => $paymentPath,
             ]);
@@ -217,20 +218,50 @@ class RentalService
         }, 3);
     }
 
+    
     /**
-     * Determine the compatible garage type.
+     * Determine the compatible garage type for a vehicle.
      */
-    private function getGarageType(Vehicle $vehicle): string
-    {
-        return match ($vehicle->type) {
+    private function getGarageType(
+        Vehicle $vehicle,
+        ?string $selectedGarageType = null
+    ): string {
+        if ($vehicle->type === 'electric_car') {
+            if (!in_array(
+                $selectedGarageType,
+                ['car', 'electric_car'],
+                true
+            )) {
+                throw ValidationException::withMessages([
+                    'garage_type' =>
+                        'Select a normal or electric car garage.',
+                ]);
+            }
+
+            return $selectedGarageType;
+        }
+
+        $garageType = match ($vehicle->type) {
             'bicycle', 'motorcycle' => 'bicycle',
             'car' => 'car',
-            'electric_car' => 'electric_car',
             default => throw ValidationException::withMessages([
                 'vehicle_id' => 'Invalid vehicle type.',
             ]),
         };
+
+        if (
+            $selectedGarageType !== null &&
+            $selectedGarageType !== $garageType
+        ) {
+            throw ValidationException::withMessages([
+                'garage_type' =>
+                    'The selected garage type is not compatible with the vehicle.',
+            ]);
+        }
+
+        return $garageType;
     }
+
 
     /**
      * Calculate the exclusive rental end date.
@@ -346,12 +377,27 @@ class RentalService
         ]);
     }
 
+    
     /**
      * Calculate the exclusive end date of a saved rental.
      */
     private function getEndDate(Rental $rental): CarbonImmutable
     {
-        $startDate = CarbonImmutable::parse($rental->start_date);
+        $startDate = CarbonImmutable::parse(
+            $rental->start_date
+        )->startOfDay();
+
+        if ($rental->rental_type === 'extension') {
+            $duration = (int) $rental->duration;
+
+            if ($duration < 1 || $duration > 65535) {
+                throw ValidationException::withMessages([
+                    'duration' => 'Invalid extension duration.',
+                ]);
+            }
+
+            return $startDate->addDays($duration);
+        }
 
         return $this->calculateEndDate(
             $startDate,
@@ -359,4 +405,76 @@ class RentalService
             $rental->duration
         );
     }
+
+
+    /**
+     * Convert the admin's inclusive end date into total rental days.
+     */
+    private function calculateExtensionDuration(
+        CarbonImmutable $startDate,
+        string $inclusiveEndDate
+    ): int {
+        $endDateExclusive = CarbonImmutable::parse(
+            $inclusiveEndDate
+        )->startOfDay()->addDay();
+
+        if ($endDateExclusive->lte($startDate)) {
+            throw ValidationException::withMessages([
+                'end_date' =>
+                    'The end date must be on or after the extension start date.',
+            ]);
+        }
+
+        $duration = (int) $startDate->diffInDays(
+            $endDateExclusive
+        );
+
+        if ($duration < 1 || $duration > 65535) {
+            throw ValidationException::withMessages([
+                'end_date' =>
+                    'The extension duration must be between 1 and 65535 days.',
+            ]);
+        }
+
+        return $duration;
+    }
+
+
+    /**
+     * Calculate extension pricing by full calendar-month periods
+     * and any remaining daily period.
+     */
+    private function calculateExtensionAmount(
+        Garage $garage,
+        CarbonImmutable $startDate,
+        int $duration
+    ): int {
+        $remainingDays = $duration;
+        $currentDate = $startDate;
+        $monthlyPeriods = 0;
+
+        while (
+            $remainingDays >= $currentDate->daysInMonth
+        ) {
+            $daysInPeriod = $currentDate->daysInMonth;
+
+            $remainingDays -= $daysInPeriod;
+            $monthlyPeriods++;
+
+            $currentDate = $currentDate->addDays(
+                $daysInPeriod
+            );
+        }
+
+        $monthlyAmount = $monthlyPeriods
+            * 25
+            * (int) $garage->daily_rate;
+
+        $dailyAmount = $remainingDays
+            * (int) $garage->daily_rate;
+
+        return $monthlyAmount + $dailyAmount;
+    }
+
+
 }

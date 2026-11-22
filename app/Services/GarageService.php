@@ -3,6 +3,8 @@
 namespace App\Services;
 
 use App\Models\Garage;
+use App\Models\Rental;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -15,6 +17,72 @@ class GarageService
     public function getGarages(): Collection
     {
         return Garage::orderBy('garage_code')->get();
+    }
+
+    /**
+     * Get all rentals occupying a garage today.
+     */
+    public function getActiveRentalsToday(): Collection
+    {
+        $today = CarbonImmutable::today()->toDateString();
+
+        return Rental::query()
+            ->with([
+                'garage',
+                'vehicle.user',
+            ])
+            ->where('start_date', '<=', $today)
+            ->whereRaw(
+                "DATE_ADD(
+                    start_date,
+                    INTERVAL IF(
+                        rental_type = 'monthly',
+                        DAY(LAST_DAY(start_date)),
+                        duration
+                    ) DAY
+                ) > ?",
+                [$today]
+            )
+            ->orderBy('start_date')
+            ->get();
+    }
+
+    /**
+     * Synchronize garage statuses with today's active rentals.
+     */
+    public function syncGarageStatuses(): void
+    {
+        DB::transaction(function () {
+            // Lock garage rows while synchronizing occupancy.
+            Garage::query()
+                ->orderBy('garage_code')
+                ->lockForUpdate()
+                ->get(['garage_id']);
+
+            $activeGarageIds = $this->getActiveRentalsToday()
+                ->pluck('garage_id')
+                ->unique()
+                ->values()
+                ->all();
+
+            // Garages without an active rental become available.
+            Garage::query()
+                ->whereNotIn('garage_id', $activeGarageIds)
+                ->where('status', '!=', 'available')
+                ->update([
+                    'status' => 'available',
+                ]);
+
+            // Garages with an active rental remain used.
+            if (!empty($activeGarageIds)) {
+                Garage::query()
+                    ->whereIn('garage_id', $activeGarageIds)
+                    ->where('status', '!=', 'used')
+                    ->update([
+                        'status' => 'used',
+                    ]);
+            }
+        }, 3);
     }
 
     /**

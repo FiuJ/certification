@@ -47,6 +47,18 @@ class RentalController extends Controller
                 'required',
                 'uuid',
             ],
+
+            // Electric cars may select a normal or charging garage.
+            // Vehicle compatibility is checked by RentalService.
+            'garage_type' => [
+                'nullable',
+                Rule::in([
+                    'bicycle',
+                    'car',
+                    'electric_car',
+                ]),
+            ],
+
             'rental_type' => [
                 'required',
                 Rule::in(['daily', 'monthly']),
@@ -123,17 +135,11 @@ class RentalController extends Controller
         string $rental
     ): RedirectResponse {
         $validated = $request->validate([
-            'rental_type' => [
+            // Admin selects the last occupied day (inclusive).
+            // RentalService calculates the total extension days.
+            'end_date' => [
                 'required',
-                Rule::in(['daily', 'monthly']),
-            ],
-            'duration' => [
-                'nullable',
-                'required_if:rental_type,daily',
-                'prohibited_if:rental_type,monthly',
-                'integer',
-                'min:1',
-                'max:30',
+                'date_format:Y-m-d',
             ],
             'payment_proof' => [
                 'required',

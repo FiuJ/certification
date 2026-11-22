@@ -16,9 +16,27 @@ class GarageController extends Controller
     public function index(
         GarageService $garageService
     ): View {
+        // Refresh occupancy before displaying garage statuses.
+        $garageService->syncGarageStatuses();
+
         $garages = $garageService->getGarages();
 
         return view('garages.index', compact('garages'));
+    }
+
+    /**
+     * Display garages currently occupied by active rentals.
+     */
+    public function currentlyRented(
+        GarageService $garageService
+    ): View {
+        $activeRentals = $garageService
+            ->getActiveRentalsToday();
+
+        return view(
+            'garages.currently-rented',
+            compact('activeRentals')
+        );
     }
 
     /**
