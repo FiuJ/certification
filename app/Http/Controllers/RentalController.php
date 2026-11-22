@@ -85,6 +85,10 @@ class RentalController extends Controller
                 'required',
                 'uuid',
             ],
+            'garage_id' => [
+                'required',
+                'uuid',
+            ],
 
             // Electric cars may select a normal or charging garage.
             // Vehicle compatibility is checked by RentalService.

@@ -1,4 +1,3 @@
-
 @php
     // The most recent record in the rental chain holds the current garage.
     $rentalChain = collect([$rental, ...$rental->extensions])->sortBy('start_date')->values();

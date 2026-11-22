@@ -139,7 +139,9 @@ class RentalService
             $garage = $this->findAvailableGarage(
                 $garageType,
                 $startDate,
-                $endDate
+                $endDate,
+                null,
+                $data['garage_id']
             );
 
             $amount = $this->calculateAmount(
@@ -267,10 +269,10 @@ class RentalService
             return $extension;
         }, 3);
     }
-
-
+    
     /**
-     * Preview a rental price without creating a rental.
+     * List available garages and their rental prices.
+     * This is a read-only preview; no garage is reserved.
      */
     public function quoteRental(User $user, array $data): array
     {
@@ -297,36 +299,45 @@ class RentalService
             $data['duration'] ?? null
         );
 
-        return DB::transaction(function () use (
-            $user, $data, $startDate, $endDate
-        ) {
-            $vehicle = $user->vehicles()
-                ->where('vehicle_id', $data['vehicle_id'])
-                ->firstOrFail();
+        $vehicle = $user->vehicles()
+            ->where('vehicle_id', $data['vehicle_id'])
+            ->firstOrFail();
 
-            $garageType = $this->getGarageType(
-                $vehicle,
-                $data['garage_type'] ?? null
-            );
+        $garageType = $this->getGarageType(
+            $vehicle,
+            $data['garage_type'] ?? null
+        );
 
-            $garage = $this->findAvailableGarage(
-                $garageType,
-                $startDate,
+        $garages = $this->getAvailableGarages(
+            $garageType,
+            $startDate,
+            $endDate
+        );
+
+        return [
+            'duration_days' => (int) $startDate->diffInDays(
                 $endDate
-            );
-
-            return [
-                'garage_code' => $garage->garage_code,
-                'daily_rate' => (int) $garage->daily_rate,
-                'duration_days' => (int) $startDate->diffInDays($endDate),
-                'amount' => $this->calculateAmount(
-                    $garage,
-                    $data['rental_type'],
-                    $data['duration'] ?? null
-                ),
-            ];
-        });
+            ),
+            'garages' => $garages->map(function (Garage $garage) use ($data) {
+                return [
+                    'garage_id' => $garage->garage_id,
+                    'garage_code' => $garage->garage_code,
+                    'garage_type' => $garage->garage_type,
+                    'daily_rate' => (int) $garage->daily_rate,
+                    'electricity_rate_per_kwh' =>
+                        $garage->electricity_rate_per_kwh === null
+                            ? null
+                            : (int) $garage->electricity_rate_per_kwh,
+                    'amount' => $this->calculateAmount(
+                        $garage,
+                        $data['rental_type'],
+                        $data['duration'] ?? null
+                    ),
+                ];
+            })->values()->all(),
+        ];
     }
+
 
     /**
      * Preview an extension price without saving an extension.
@@ -480,70 +491,67 @@ class RentalService
         return $garage->daily_rate * $duration;
     }
 
+    
     /**
-     * Find a garage without overlapping rentals.
+     * Find an available garage.
+     *
+     * New rentals may select a specific garage.
+     * Extensions still prefer their previous garage.
      */
     private function findAvailableGarage(
         string $garageType,
         CarbonImmutable $startDate,
         CarbonImmutable $endDate,
-        ?string $preferredGarageId = null
+        ?string $preferredGarageId = null,
+        ?string $selectedGarageId = null
     ): Garage {
-        // Lock garage rows during the booking transaction.
-        $garages = Garage::where('garage_type', $garageType)
-            ->orderBy('garage_code')
-            ->lockForUpdate()
-            ->get();
+        $garages = $this->getAvailableGarages(
+            $garageType,
+            $startDate,
+            $endDate,
+            true
+        );
 
-        if ($garages->isEmpty()) {
+        // Renter selected an exact garage.
+        // Never silently substitute another garage.
+        if ($selectedGarageId !== null) {
+            $selectedGarage = $garages->firstWhere(
+                'garage_id',
+                $selectedGarageId
+            );
+
+            if ($selectedGarage === null) {
+                throw ValidationException::withMessages([
+                    'garage_id' =>
+                        'The selected garage is not available for this rental period.',
+                ]);
+            }
+
+            return $selectedGarage;
+        }
+
+        // Preserve current Admin extension behavior.
+        if ($preferredGarageId !== null) {
+            $preferredGarage = $garages->firstWhere(
+                'garage_id',
+                $preferredGarageId
+            );
+
+            if ($preferredGarage !== null) {
+                return $preferredGarage;
+            }
+        }
+
+        $garage = $garages->first();
+
+        if ($garage === null) {
             throw ValidationException::withMessages([
-                'garage_id' => 'No compatible garages are available.',
+                'garage_id' =>
+                    'No compatible garage is available for the selected period.',
             ]);
         }
 
-        // Prefer the garage used by the previous rental.
-        if ($preferredGarageId !== null) {
-            $garages = $garages->sortBy(
-                fn (Garage $garage) =>
-                    $garage->garage_id === $preferredGarageId ? 0 : 1
-            )->values();
-        }
-
-        // Get rentals that start before the requested end date.
-        $existingRentals = Rental::whereIn(
-            'garage_id',
-            $garages->pluck('garage_id')
-        )
-            ->where('start_date', '<', $endDate->toDateString())
-            ->lockForUpdate()
-            ->get()
-            ->groupBy('garage_id');
-
-        foreach ($garages as $garage) {
-            $isAvailable = true;
-
-            foreach (
-                $existingRentals->get($garage->garage_id, [])
-                as $existingRental
-            ) {
-                $existingEndDate = $this->getEndDate(
-                    $existingRental
-                );
-
-                if ($startDate->lt($existingEndDate)) {
-                    $isAvailable = false;
-                    break;
-                }
-            }
-
-            if ($isAvailable) {
-                return $garage;
-            }
-        }
-
-        throw ValidationException::withMessages([
-            'start_date' => 'No garage is available for the selected period.',
-        ]);
+        return $garage;
     }
 
     
@@ -644,6 +652,73 @@ class RentalService
 
         return $monthlyAmount + $dailyAmount;
     }
+
+
+    /**
+     * Find all garages available during the requested period.
+     * End dates are exclusive.
+     */
+    private function getAvailableGarages(
+        string $garageType,
+        CarbonImmutable $startDate,
+        CarbonImmutable $endDate,
+        bool $lock = false
+    ): Collection {
+        $garageQuery = Garage::where(
+            'garage_type',
+            $garageType
+        )->orderBy('garage_code');
+
+        if ($lock) {
+            $garageQuery->lockForUpdate();
+        }
+
+        $garages = $garageQuery->get();
+
+        if ($garages->isEmpty()) {
+            return $garages;
+        }
+
+        $rentalQuery = Rental::whereIn(
+            'garage_id',
+            $garages->pluck('garage_id')
+        )->where(
+            'start_date',
+            '<',
+            $endDate->toDateString()
+        );
+
+        if ($lock) {
+            $rentalQuery->lockForUpdate();
+        }
+
+        $existingRentals = $rentalQuery
+            ->get()
+            ->groupBy('garage_id');
+
+        return $garages->filter(
+            function (Garage $garage) use (
+                $existingRentals,
+                $startDate
+            ) {
+                foreach (
+                    $existingRentals->get($garage->garage_id, [])
+                    as $rental
+                ) {
+                    $existingEndDate = $this->getEndDate(
+                        $rental
+                    );
+
+                    if ($startDate->lt($existingEndDate)) {
+                        return false;
+                    }
+                }
+
+                return true;
+            }
+        )->values();
+    }
+
 
 
 }
